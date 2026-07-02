@@ -10,13 +10,18 @@ groq_api_key = os.environ.get("GROQ_API_KEY")
 
 system_promt = SystemMessage(
     content="""
-    You are a helpful assistant managaming my emails from my job application
+    You are an AI assistant. You MUST start by calling the get_recent_emails tool. Do not generate any other text until you have called the tool and received its output.
     """
 )
 
-model = ChatGroq(
-    model = "meta-llama/llama-4-scout-17b-16e-instruct",
-    temperature = 0.5
+smart_model = ChatGroq(
+    model = "llama-3.3-70b-versatile",
+    temperature = 0
+)
+
+fast_model = ChatGroq(
+    model="meta-llama/llama-4-scout-17b-16e-instruct",
+    temperature=0
 )
 
 if __name__ == "__main__":
@@ -24,6 +29,11 @@ if __name__ == "__main__":
     messages = [
         HumanMessage(content="System Check: Are you online?")
     ]
-        
-    response = model.invoke(messages)
+    
+    print("fast model response")
+    response = fast_model.invoke(messages)
     print(response.content)
+
+    print("smart model response")
+    response2 = smart_model.invoke(messages)
+    print(response2)
