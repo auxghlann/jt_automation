@@ -3,8 +3,11 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Request read-only access to Gmail (adjust scopes if you need to send emails later)
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/spreadsheets"
+]
+
 
 def get_mcp_token():
     """Authenticates the user and returns the OAuth 2.0 Access Token string."""
