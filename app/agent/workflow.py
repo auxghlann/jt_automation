@@ -5,7 +5,7 @@ from typing import Literal, Annotated
 from pydantic import Field, BaseModel
 from operator import add
 
-from app.services.sheets_service import append_to_sheet
+from app.services.sheets_service import upsert_to_sheet
 from app.agent.llm import fast_model, smart_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -38,7 +38,7 @@ class AgentState(BaseModel):
 def create_graph(tools):
     """Factory function that builds the graph with the provided tools."""
     llm_with_tools = fast_model.bind_tools(tools)
-    tool_node = ToolNode(tools)
+    tool_node = ToolNode(tools) # node 0: tools
 
     # nodes 1: fetch email
     async def get_email(state: AgentState) -> dict:
@@ -69,12 +69,20 @@ def create_graph(tools):
 
         last_message = str(raw_content)
         
-        if "No job updates found" in last_message:
+        if "No job updates found" in last_message or last_message == "[]":
                 return {"final_output": None}
                 
-        # Extract the structured data from the LLM's summary
+        # Extract the structured data from the raw tool output or LLM summary
         structured_llm = smart_model.with_structured_output(ExtractedResult)
-        response: ExtractedResult = await structured_llm.ainvoke(last_message)
+        
+        # --- NEW: Instruct the smart model directly! ---
+        prompt = (
+            "Analyze these emails and extract ONLY the job updates where the application status "
+            "is EXACTLY one of or in the CONTEXT of: 'applied', 'viewed', 'interview', 'rejected', 'accepted'. "
+            "Completely IGNORE any emails about 'saved' jobs, 'expired' jobs, or any other irrelevant statuses. "
+            f"Emails: {last_message}"
+        )
+        response: ExtractedResult = await structured_llm.ainvoke(prompt)
         
         return {"final_output": response.updates}
     
@@ -85,9 +93,8 @@ def create_graph(tools):
             print("No updates to push to Google Sheets.")
             return {}
             
-        print(f"Pushing {len(updates)} updates to Google Sheets...")
+        print(f"Checking {len(updates)} updates against Google Sheets...")
         
-        # Convert the Pydantic SheetModels into a simple list of lists for Google API
         rows = []
         for model in updates:
             rows.append([
@@ -99,7 +106,7 @@ def create_graph(tools):
             ])
             
         # Call our new service
-        append_to_sheet(rows)
+        upsert_to_sheet(rows)
         return {}
 
     # --- Build the Graph ---
@@ -108,15 +115,15 @@ def create_graph(tools):
     workflow.add_node("tools", tool_node)
     workflow.add_node("analyzer", analyze_email)
     workflow.add_node("update_sheets", update_sheets)
-
     workflow.add_edge(START, "get_email")
-    # This automatically routes to 'tools' if a tool was called, or '__end__' (which we remap) if finished
+
     workflow.add_conditional_edges(
         "get_email", 
         tools_condition, 
         {"tools": "tools", "__end__": "analyzer"}
     )
-    workflow.add_edge("tools", "get_email")
+
+    workflow.add_edge("tools", "analyzer")
     workflow.add_edge("analyzer", "update_sheets")
     workflow.add_edge("update_sheets", END)
     return workflow.compile()
@@ -156,7 +163,7 @@ if __name__ == "__main__":
             result = await app.ainvoke(initial_state)
             
             print("\n--- Final Output ---")
-            pprint.pprint(result.get("final_output"))
+            pprint.pprint(result)
     asyncio.run(run_test())
 
     
