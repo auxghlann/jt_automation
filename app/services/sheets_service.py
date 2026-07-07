@@ -26,6 +26,7 @@ def upsert_to_sheet(rows: list[list[str]]):
     for new_row in rows:
         new_company = new_row[0].strip().lower() if len(new_row) > 0 and new_row[0] else ""
         new_title = new_row[1].strip().lower() if len(new_row) > 1 and new_row[1] else ""
+        new_status = new_row[3].strip().lower() if len(new_row) > 3 and new_row[3] else ""
         
         match_found = False
         
@@ -34,19 +35,23 @@ def upsert_to_sheet(rows: list[list[str]]):
             
             existing_company = existing_row[0].strip().lower()
             existing_title = existing_row[1].strip().lower()
+            existing_status = existing_row[3].strip().lower() if len(existing_row) > 3 else ""
             
             if new_company == existing_company and new_title == existing_title:
                 match_found = True
                 row_number = i + 1 # Google Sheets is 1-indexed
                 
-                print(f"Updating existing row {row_number} for {new_company} - {new_title}")
-                service.spreadsheets().values().update(
-                    spreadsheetId=SPREADSHEET_ID,
-                    range=f"Sheet1!A{row_number}:E{row_number}",
-                    valueInputOption="USER_ENTERED",
-                    body={"values": [new_row]}
-                ).execute()
-                break # Stop searching, we updated it
+                if new_status == existing_status:
+                    print(f"Skipping row {row_number} for {new_company}. Status is already '{existing_status}'.")
+                else:
+                    print(f"Updating row {row_number} for {new_company}. Status: '{existing_status}' -> '{new_status}'")
+                    service.spreadsheets().values().update(
+                        spreadsheetId=SPREADSHEET_ID,
+                        range=f"Sheet1!A{row_number}:E{row_number}",
+                        valueInputOption="USER_ENTERED",
+                        body={"values": [new_row]}
+                    ).execute()
+                break # Stop searching, we handled the match
                 
         # 3. APPEND if no match
         if not match_found:

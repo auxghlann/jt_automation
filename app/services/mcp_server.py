@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import base64
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
@@ -7,6 +8,25 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
 mcp = FastMCP("GmailMCPServer")
+
+PROCESSED_EMAILS_FILE = "processed_emails.json"
+
+def load_processed_ids() -> set:
+    """Loads processed IDs, automatically creating the file if it doesn't exist."""
+    if not os.path.exists(PROCESSED_EMAILS_FILE):
+        # Auto-create the file on the first run
+        with open(PROCESSED_EMAILS_FILE, "w") as f:
+            json.dump([], f)
+        return set()
+        
+    with open(PROCESSED_EMAILS_FILE, "r") as f:
+        return set(json.load(f))
+
+def save_processed_id(msg_id: str):
+    processed = load_processed_ids()
+    processed.add(msg_id)
+    with open(PROCESSED_EMAILS_FILE, "w") as f:
+        json.dump(list(processed), f)
 
 def get_email_body(payload):
     """Recursively searches for the HTML body, falling back to plain text."""
@@ -53,7 +73,7 @@ def get_gmail_service():
     return build('gmail', 'v1', credentials=creds)
 
 @mcp.tool()
-def get_recent_emails(days_ago: int = 7, limit: int = 5) -> str:
+def get_recent_emails(days_ago: int = 2, limit: int = 5) -> str:
     """Fetch emails from the Primary inbox from the last N days."""
     service = get_gmail_service()
     
@@ -66,9 +86,16 @@ def get_recent_emails(days_ago: int = 7, limit: int = 5) -> str:
         return "No recent emails found."
         
     email_data = []
+    processed_ids = load_processed_ids()
+    
     for msg in messages:
+        msg_id = msg['id']
+        
+        if msg_id in processed_ids:
+            continue
+            
         # Request the 'full' format so we get the body payload
-        msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+        msg_detail = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
         payload = msg_detail.get('payload', {})
         headers = payload.get('headers', [])
         
@@ -104,11 +131,14 @@ def get_recent_emails(days_ago: int = 7, limit: int = 5) -> str:
             snippet = raw_snippet[:250] + "..."
         
         email_data.append({
-            "message_id": msg['id'],
+            "message_id": msg_id,
             "subject": subject,
             "sender": sender,
             "snippet": snippet
         })
+        
+        # Mark as processed so we never read it again!
+        save_processed_id(msg_id)
         
     return str(email_data)
 
