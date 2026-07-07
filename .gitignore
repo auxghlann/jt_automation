@@ -16,6 +16,9 @@ wheels/
 credentials.json
 token.json
 
+# data
+processed_emails.json
+
 # test
 tests/
 
