@@ -129,41 +129,54 @@ def create_graph(tools):
     return workflow.compile()
 
 
-if __name__ == "__main__":
-    import pprint
+async def run_agent():
+    """Encapsulates the graph building and MCP tool context."""
+    print("Connecting to local MCP server...")
     
-    # async def get_graph_image():
-    #     async with get_google_mcp_tools() as tools:
-    #         print("Server connected. Building graph...")
-    #         app = create_graph(tools)
-
-    #     import os
-    #     from IPython.display import Image, display
-    #     output_path = os.path.join(os.path.dirname(__file__), "graph.png")
-
-    #     with open(output_path, "wb") as f:
-    #             # Call the method with () and write the bytes directly to the file
-    #             f.write(app.get_graph().draw_mermaid_png())
-    
-    # asyncio.run(get_graph_image())
+    async with get_google_mcp_tools() as tools:
+        print("Server connected. Building graph...")
+        app = create_graph(tools)
+        initial_state = {"messages": []} 
         
-
-    
-    # test code
-    async def run_test():
-        print("Connecting to local MCP server...")
+        print("Running workflow...")
+        result = await app.ainvoke(initial_state)
         
-        # Keep the connection alive while the graph runs!
-        async with get_google_mcp_tools() as tools:
-            print("Server connected. Building graph...")
-            app = create_graph(tools)
-            initial_state = {"messages": []} 
-            
-            print("Running workflow...")
-            result = await app.ainvoke(initial_state)
-            
-            print("\n--- Final Output ---")
-            pprint.pprint(result)
-    asyncio.run(run_test())
+        return result
 
-    
+
+# if __name__ == "__main__":
+#     import pprint
+#     
+#     # async def get_graph_image():
+#     #     async with get_google_mcp_tools() as tools:
+#     #         print("Server connected. Building graph...")
+#     #         app = create_graph(tools)
+# 
+#     #     import os
+#     #     from IPython.display import Image, display
+#     #     output_path = os.path.join(os.path.dirname(__file__), "graph.png")
+# 
+#     #     with open(output_path, "wb") as f:
+#     #             # Call the method with () and write the bytes directly to the file
+#     #             f.write(app.get_graph().draw_mermaid_png())
+#     
+#     # asyncio.run(get_graph_image())
+#         
+# 
+#     
+#     # test code
+#     # async def run_test():
+#     #     print("Connecting to local MCP server...")
+#     #     
+#     #     # Keep the connection alive while the graph runs!
+#     #     async with get_google_mcp_tools() as tools:
+#     #         print("Server connected. Building graph...")
+#     #         app = create_graph(tools)
+#     #         initial_state = {"messages": []} 
+#     #         
+#     #         print("Running workflow...")
+#     #         result = await app.ainvoke(initial_state)
+#     #         
+#     #         print("\n--- Final Output ---")
+#     #         pprint.pprint(result)
+#     # asyncio.run(run_test())
