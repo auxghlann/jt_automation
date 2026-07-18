@@ -73,7 +73,7 @@ def get_gmail_service():
     return build('gmail', 'v1', credentials=creds)
 
 @mcp.tool()
-def get_recent_emails(days_ago: int = 2, limit: int = 5) -> str:
+def get_recent_emails(days_ago: int = 2, limit: int = 7) -> str:
     """Fetch emails from the Primary inbox from the last N days."""
     service = get_gmail_service()
     
@@ -84,6 +84,8 @@ def get_recent_emails(days_ago: int = 2, limit: int = 5) -> str:
     
     if not messages:
         return "No recent emails found."
+
+    messages.reverse()
         
     email_data = []
     processed_ids = load_processed_ids()
@@ -191,5 +193,3 @@ if __name__ == "__main__":
     #                 print(f"Content: {email['snippet']}")
     #         except Exception as e:
     #             print(new_result)
-                
-    #     print("\n(Note: To run the actual MCP server, use: uv run app/services/mcp_server.py run)")
