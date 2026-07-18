@@ -38,28 +38,26 @@
    uv sync
    ```
 
-3. **Configure Environment Variables:**
-   Create a `.env` file in the root directory and add your API keys:
+3. **Set up Google Sheets:**
+   - Open your browser and create a new Google Sheet.
+   - Set up the first row (headers) with these columns: `Company | Title | Location | Status | Summary`. (Ensure your tab is named `Sheet1`).
+   - Find your **Spreadsheet ID** in the URL. It is the long string of random characters between `/d/` and `/edit`.
+     - Example URL: `https://docs.google.com/spreadsheets/d/`**`1SzD9gNRZqlb_xomEI7mYn1HADS5vahV1pKydqtSFhOg`**`/edit`
+
+4. **Configure Environment Variables:**
+   Create a `.env` file in the root directory and add your Groq API key and the Spreadsheet ID you just found:
    ```env
    GROQ_API_KEY="gsk_your_groq_api_key_here"
    SPREADSHEET_ID="your_google_spreadsheet_id_here"
    ```
 
-4. **Set up Google Authentication:**
+5. **Set up Google Authentication:**
    - Download your `credentials.json` from the Google Cloud Console and place it in the root of the project.
    - Run the authentication script to generate your OAuth token:
    ```bash
    uv run app/services/google_auth.py
    ```
    - *Note: A browser window will open asking you to grant permissions. Once completed, a `token.json` file will be generated locally.*
-
-5. **Set up Google Sheets:**
-   - Open your browser and create a new Google Sheet.
-   - Set up the first row (headers) with these columns: `Company | Title | Location | Status | Summary`. (Ensure your tab is named `Sheet1`).
-   - Find your **Spreadsheet ID** in the URL. It is the long string of random characters between `/d/` and `/edit`.
-     - Example URL: `https://docs.google.com/spreadsheets/d/`**`1SzD9gNRZqlb_xomEI7mYn1HADS5vahV1pKydqtSFhOg`**`/edit`
-     - The ID in the example above is: `1SzD9gNRZqlb_xomEI7mYn1HADS5vahV1pKydqtSFhOg`
-   - Copy your unique ID and paste it into your `.env` file for the `SPREADSHEET_ID` variable.
 
 ## Usage
 
