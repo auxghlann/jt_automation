@@ -5,7 +5,7 @@ import base64
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
+from .google_auth import get_credentials
 
 mcp = FastMCP("GmailMCPServer")
 
@@ -67,9 +67,7 @@ def get_email_body(payload):
     return raw_text
 
 def get_gmail_service():
-    if not os.path.exists("token.json"):
-        raise Exception("token.json not found. Run google_auth.py first.")
-    creds = Credentials.from_authorized_user_file("token.json")
+    creds = get_credentials()
     return build('gmail', 'v1', credentials=creds)
 
 @mcp.tool()
