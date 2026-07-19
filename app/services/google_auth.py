@@ -9,8 +9,8 @@ SCOPES = [
 ]
 
 
-def get_mcp_token():
-    """Authenticates the user and returns the OAuth 2.0 Access Token string."""
+def get_credentials():
+    """Authenticates the user and returns the Google OAuth Credentials object."""
     creds = None
     
     # Load previously saved token if it exists
@@ -36,10 +36,10 @@ def get_mcp_token():
         with open("token.json", "w") as token_file:
             token_file.write(creds.to_json())
             
-    # Return the raw token string
-    return creds.token
+    # Return the Credentials object
+    return creds
 
 if __name__ == "__main__":
     print("Starting Google Authentication flow...")
-    get_mcp_token()
+    get_credentials()
     print("Authentication successful! token.json has been generated.")
