@@ -29,7 +29,7 @@
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/jt_automation.git
+   git clone https://github.com/auxghlann/jt_automation.git
    cd jt_automation
    ```
 
