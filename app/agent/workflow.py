@@ -1,12 +1,12 @@
 from langchain_core.messages import (
-    AIMessage, SystemMessage, AnyMessage, RemoveMessage
+    AIMessage, HumanMessage, SystemMessage, AnyMessage, RemoveMessage
 )
 from typing import Literal, Annotated
 from pydantic import Field, BaseModel
 from operator import add
 
 from app.services.sheets_service import upsert_to_sheet
-from app.agent.llm import fast_model, smart_model
+from app.agent.model import model
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -37,7 +37,7 @@ class AgentState(BaseModel):
 
 def create_graph(tools):
     """Factory function that builds the graph with the provided tools."""
-    llm_with_tools = fast_model.bind_tools(tools)
+    llm_with_tools = model.bind_tools(tools)
     tool_node = ToolNode(tools) # node 0: tools
 
     # nodes 1: fetch email
@@ -56,6 +56,9 @@ def create_graph(tools):
                     "Do not apologize or say you don't have access. Call the tool first. "
                     "After you receive the tool's output, read through the emails and identify any job updates. "
                     "If none are found, reply with 'No job updates found'."
+                ),
+                HumanMessage(
+                    "Please check my recent emails for job updates."
                 )
             ]
             
@@ -73,7 +76,7 @@ def create_graph(tools):
                 return {"final_output": None}
                 
         # Extract the structured data from the raw tool output or LLM summary
-        structured_llm = smart_model.with_structured_output(ExtractedResult)
+        structured_llm = llm_with_tools.with_structured_output(ExtractedResult)
         
         prompt = (
             "Analyze these emails and extract ONLY the job updates where the application status "
