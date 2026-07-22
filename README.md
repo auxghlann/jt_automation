@@ -44,15 +44,26 @@
    - Find your **Spreadsheet ID** in the URL. It is the long string of random characters between `/d/` and `/edit`.
      - Example URL: `https://docs.google.com/spreadsheets/d/`**`1SzD9gNRZqlb_xomEI7mYn1HADS5vahV1pKydqtSFhOg`**`/edit`
 
-4. **Configure Environment Variables:**
-   Create a `.env` file in the root directory and add your Groq API key and the Spreadsheet ID you just found:
+4. **Configure Environment Variables & LLM:**
+   By default, this project uses Google's Gemma models via LangChain, but it is built to be completely dynamic!
+   - Create a `.env` file in the root directory and add your API key and Spreadsheet ID:
    ```env
-   GROQ_API_KEY="gsk_your_groq_api_key_here"
+   GEMINI_API_KEY="your_google_gemini_key_here"
    SPREADSHEET_ID="your_google_spreadsheet_id_here"
    ```
+   - **Want to use a different LLM provider?** 
+     1. Install their LangChain package (e.g., `uv add langchain-openai` or `uv add langchain-groq`).
+     2. Open `app/agent/model.py` and replace the `ChatGoogleGenerativeAI` initialization with your provider of choice.
+     3. Update your `.env` file with the corresponding key (e.g., `OPENAI_API_KEY`).
 
 5. **Set up Google Authentication:**
-   - Download your `credentials.json` from the Google Cloud Console and place it in the root of the project.
+   You must authorize this app to read your Gmail and write to your Google Sheets.
+   - Go to the [Google Cloud Console](https://console.cloud.google.com/).
+   - **Create a New Project** (or select an existing one).
+   - Navigate to **APIs & Services > Library** and enable both the **Gmail API** and the **Google Sheets API**.
+   - Navigate to **APIs & Services > Credentials**.
+   - Click **Create Credentials** -> **OAuth client ID**. (Select "Desktop app" as the Application type).
+   - Download the JSON file, rename it exactly to `credentials.json`, and place it in the root directory of this project.
    - Run the authentication script to generate your OAuth token:
    ```bash
    uv run app/services/google_auth.py
