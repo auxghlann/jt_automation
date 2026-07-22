@@ -4,7 +4,7 @@
 
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agentic_Workflow-FF6F00)
-![Groq](https://img.shields.io/badge/Groq-Llama_3-000000)
+![Gemma4](https://img.shields.io/badge/Gemma-gemma--4--31b--it-000000)
 ![MCP](https://img.shields.io/badge/MCP-Google_Integration-4285F4)
 
 > An AI-powered agentic workflow that automates job application tracking. It uses LangGraph to autonomously fetch Gmail updates via MCP, extract application statuses, and  sync them to Google Sheets.
