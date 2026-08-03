@@ -2,6 +2,7 @@ import os
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from app.errors.exceptions import AuthRequiredError
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -9,7 +10,7 @@ SCOPES = [
 ]
 
 
-def get_credentials():
+def get_credentials(interactive: bool = False):
     """Authenticates the user and returns the Google OAuth Credentials object."""
     creds = None
     
@@ -26,9 +27,13 @@ def get_credentials():
                 print(f"Token refresh failed: {e}. Re-authenticating...")
                 if os.path.exists("token.json"):
                     os.remove("token.json")
+                if not interactive:
+                    raise AuthRequiredError("Google authentication token is expired. Please run auth.")
                 flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
                 creds = flow.run_local_server(port=0)
         else:
+            if not interactive:
+                raise AuthRequiredError("Google authentication is required. Please run auth.")
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
             

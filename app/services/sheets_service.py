@@ -1,6 +1,6 @@
 import os
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
+from app.services.google_auth import get_credentials
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,10 +10,7 @@ RANGE_NAME = "Sheet1!A:E" # Assumes 5 columns (Company, Title, Location, Status,
 
 def upsert_to_sheet(rows: list[list[str]]):
     """Updates existing rows if Company+Title match, otherwise appends."""
-    if not os.path.exists("token.json"):
-        raise Exception("token.json not found.")
-        
-    creds = Credentials.from_authorized_user_file("token.json")
+    creds = get_credentials(interactive=False)
     service = build('sheets', 'v4', credentials=creds)
     
     # 1. READ existing data
