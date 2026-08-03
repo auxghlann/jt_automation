@@ -2,6 +2,13 @@
 
 Welcome to the **Job Tracker Automation** project! This document provides essential context, architectural rules, and guidelines for AI agents working in this codebase.
 
+## Absolute Source of Truth
+**CRITICAL**: You must refer to the `spec/` directory for the definitive truth regarding this project's requirements and architecture. Do not guess or hallucinate features; read the specs first.
+- For product goals and feature requirements, read `spec/prd.md`.
+- For system design and the technology stack, read `spec/architecture.md`.
+- For historical context and major engineering decisions, read `spec/decisions.md`.
+
+Always align your proposed implementation plans and code changes with the documents in the `spec/` directory before writing code.
 ## Architecture Overview
 
 This project is an AI-powered agentic workflow that automates job application tracking by reading Gmail and syncing updates to Google Sheets. 

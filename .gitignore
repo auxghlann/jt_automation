@@ -24,3 +24,8 @@ tests/
 
 # context
 .context/
+
+# local docs and cotnext
+.agents/
+.docs/
+.spec/

@@ -67,7 +67,7 @@ def get_email_body(payload):
     return raw_text
 
 def get_gmail_service():
-    creds = get_credentials()
+    creds = get_credentials(interactive=False)
     return build('gmail', 'v1', credentials=creds)
 
 @mcp.tool()

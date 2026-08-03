@@ -1,28 +1,16 @@
 import asyncio
 from app.agent.workflow import run_agent
+from app.cli.sync import sync
+from app.cli.auth import auth
+import click
 
-def main():
-    print("========================================")
-    print(" Starting Job Tracker Automation...")
-    print("========================================")
-    
-    try:
-        # Run the abstracted agent
-        result = asyncio.run(run_agent())
-        
-        # Extract the final_output array for a nice summary
-        updates = result.get("final_output", [])
-        
-        print("\n========================================")
-        if updates:
-            print(f"✅ Success! Processed {len(updates)} job updates.")
-        else:
-            print("✅ Success! No new job updates found.")
-        print("========================================")
-            
-    except Exception as e:
-        print("\n❌ Automation Failed!")
-        print(f"Error: {e}")
+@click.group()
+def cli():
+    """Job Tracker CLI"""
+    pass
+
+cli.add_command(sync)
+cli.add_command(auth)
 
 if __name__ == "__main__":
-    main()
+    cli()
