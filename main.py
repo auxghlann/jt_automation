@@ -7,16 +7,18 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 
+#  CLI entrypoint
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
     """Job Tracker CLI"""
     if ctx.invoked_subcommand is None:
-        interactive_loop()
+        interactive_loop() # invoke loop function
 
 cli.add_command(sync)
 cli.add_command(auth)
 
+# app loop function
 def interactive_loop():
     """Custom interactive shell powered by prompt_toolkit."""
 
