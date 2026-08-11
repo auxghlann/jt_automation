@@ -1,16 +1,7 @@
 import click
 import asyncio
 from app.agent.workflow import run_agent
-from app.errors.exceptions import AuthRequiredError
-
-def is_auth_error(exc: BaseException) -> bool:
-    if isinstance(exc, AuthRequiredError):
-        return True
-
-    if isinstance(exc, BaseExceptionGroup):
-        return any(is_auth_error(sub) for sub in exc.exceptions)
-
-    return False
+from app.errors.exceptions import AuthRequiredError, find_auth_error
 
 @click.command(name="sync")
 def sync():
@@ -31,7 +22,7 @@ def sync():
             click.secho("No new job updates found.", fg="yellow")
     
     except Exception as exc:
-        if is_auth_error(exc):
+        if find_auth_error(exc):
             click.secho(
                 "\nAuthentication Required: Google authentication is required.",
                 fg="red",
