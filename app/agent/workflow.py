@@ -1,26 +1,27 @@
 from langchain_core.messages import (
-    AIMessage, HumanMessage, SystemMessage, AnyMessage, RemoveMessage
+    AIMessage, HumanMessage, SystemMessage, AnyMessage
 )
 from typing import Literal, Annotated
 from pydantic import Field, BaseModel
-from operator import add
 
 from app.services.sheets_service import upsert_to_sheet
-from app.agent.model import model
+from app.agent.model import get_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from app.services.gmail_mcp import get_google_mcp_tools
 
-
 import asyncio
+
+# Application Status Accepted Literal
+ApplicationStatus = Literal["applied", "viewed", "interview", "rejected", "accepted"]
 
 # Sheet model - represents a single row of a sheet
 class SheetModel(BaseModel):
     company_name: str | None = Field(default=None, description="the name of the company the user applied")
     job_title: str | None = Field(default=None, description="the job title the user applied")
     location: str | None =  Field(default=None, description="the location of the job applied")
-    status: Literal["applied", "viewed", "interview", "rejected", "accepted"] | None = Field(default=None, description="the status of the application")
+    status: ApplicationStatus | None = Field(default=None, description="the status of the application")
     short_summary: str | None = Field(default=None, description="short summary of the email")
 
 
@@ -30,38 +31,19 @@ class ExtractedResult(BaseModel):
 
 class AgentState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
-    final_output: Annotated[list[SheetModel], add]
+    final_output: list[SheetModel] = Field(default_factory=list)
 
 
 # Graph Factory
 
 def create_graph(tools):
     """Factory function that builds the graph with the provided tools."""
-    llm_with_tools = model.bind_tools(tools)
+    llm_with_tools = get_model().bind_tools(tools)
     tool_node = ToolNode(tools) # node 0: tools
 
     # nodes 1: fetch email
     async def get_email(state: AgentState) -> dict:
         messages = state.messages
-        
-        if len(messages) > 3:
-            recent_message = [RemoveMessage(id=m.id) for m in messages[1:-1]]
-            return {"messages": recent_message}
-        
-        if not messages:
-            # First run: give the LLM its instructions
-            messages = [
-                SystemMessage(
-                    "You are an AI job application assistant. You MUST use the `get_recent_emails` tool immediately to fetch emails. "
-                    "Do not apologize or say you don't have access. Call the tool first. "
-                    "After you receive the tool's output, read through the emails and identify any job updates. "
-                    "If none are found, reply with 'No job updates found'."
-                ),
-                HumanMessage(
-                    "Please check my recent emails for job updates."
-                )
-            ]
-            
         # The LLM decides whether to call a tool or reply to the user
         response = await llm_with_tools.ainvoke(messages)
         return {"messages": [response]}
@@ -69,11 +51,10 @@ def create_graph(tools):
     # node 2: analyze fetched email/s
     async def analyze_email(state: AgentState) -> dict:
         raw_content = state.messages[-1].content
-
         last_message = str(raw_content)
         
         if "No job updates found" in last_message or last_message == "[]":
-                return {"final_output": None}
+                return {"final_output": []}
                 
         # Extract the structured data from the raw tool output or LLM summary
         structured_llm = llm_with_tools.with_structured_output(ExtractedResult)
@@ -107,8 +88,8 @@ def create_graph(tools):
                 model.short_summary or ""
             ])
             
-        # Call our new service
-        upsert_to_sheet(rows)
+        # Call our new service synchronously in a background thread to not block event loop
+        await asyncio.to_thread(upsert_to_sheet, rows)
         return {}
 
     # --- Build the Graph ---
@@ -138,7 +119,20 @@ async def run_agent():
     async with get_google_mcp_tools() as tools:
         print("Server connected. Building graph...")
         app = create_graph(tools)
-        initial_state = {"messages": []} 
+        
+        initial_state = {
+            "messages": [
+                SystemMessage(
+                    "You are an AI job application assistant. You MUST use the `get_recent_emails` tool immediately to fetch emails. "
+                    "Do not apologize or say you don't have access. Call the tool first. "
+                    "After you receive the tool's output, read through the emails and identify any job updates. "
+                    "If none are found, reply with 'No job updates found'."
+                ),
+                HumanMessage(
+                    "Please check my recent emails for job updates."
+                )
+            ]
+        }
         
         print("Running workflow...")
         result = await app.ainvoke(initial_state)
