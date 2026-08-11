@@ -9,10 +9,11 @@ load_dotenv()
 MODEL = "gemma-4-31b-it"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-model = ChatGoogleGenerativeAI(
-    model=MODEL,
-    api_key=GEMINI_API_KEY
-)
+def get_model():
+    return ChatGoogleGenerativeAI(
+        model=MODEL,
+        api_key=GEMINI_API_KEY
+    )
 
 if __name__ == "__main__":
 
@@ -27,5 +28,5 @@ if __name__ == "__main__":
     ]
 
     print("gemma model")
-    response = model.invoke(messages)
+    response = get_model().invoke(messages)
     print(response.content)
