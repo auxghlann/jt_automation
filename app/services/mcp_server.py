@@ -2,6 +2,8 @@ import os
 import re
 import json
 import base64
+import email.utils
+from datetime import datetime
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 from googleapiclient.discovery import build
@@ -10,6 +12,16 @@ from .google_auth import get_credentials
 mcp = FastMCP("GmailMCPServer")
 
 PROCESSED_EMAILS_FILE = "processed_emails.json"
+
+def format_email_date(raw_date: str) -> str:
+    """Parses RFC 2822 email date header into YYYY-MM-DD format."""
+    if not raw_date:
+        return datetime.now().strftime("%Y-%m-%d")
+    try:
+        dt = email.utils.parsedate_to_datetime(raw_date)
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
 
 def load_processed_ids() -> set:
     """Loads processed IDs, automatically creating the file if it doesn't exist."""
@@ -101,6 +113,8 @@ def get_recent_emails(days_ago: int = 2, limit: int = 7) -> str:
         
         subject = next((h['value'] for h in headers if h['name'] == 'Subject'), "No Subject")
         sender = next((h['value'] for h in headers if h['name'] == 'From'), "Unknown")
+        raw_date = next((h['value'] for h in headers if h['name'] == 'Date'), "")
+        formatted_date = format_email_date(raw_date)
         
         # Extract the actual body instead of the snippet!
         body_text = get_email_body(payload)
@@ -134,6 +148,7 @@ def get_recent_emails(days_ago: int = 2, limit: int = 7) -> str:
             "message_id": msg_id,
             "subject": subject,
             "sender": sender,
+            "date": formatted_date,
             "snippet": snippet
         })
         
