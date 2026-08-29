@@ -1,7 +1,7 @@
 from langchain_core.messages import (
     AIMessage, HumanMessage, SystemMessage, AnyMessage
 )
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Callable
 from pydantic import Field, BaseModel
 
 from app.services.sheets_service import upsert_to_sheet
@@ -37,13 +37,15 @@ class AgentState(BaseModel):
 
 # Graph Factory
 
-def create_graph(tools):
-    """Factory function that builds the graph with the provided tools."""
+def create_graph(tools, progress_callback: Callable[[str, int], None] | None = None):
+    """Factory function that builds the graph with the provided tools and progress callback."""
     llm_with_tools = get_model().bind_tools(tools)
     tool_node = ToolNode(tools) # node 0: tools
 
     # nodes 1: fetch email
     async def get_email(state: AgentState) -> dict:
+        if progress_callback:
+            progress_callback("Querying recent emails from Gmail inbox...", 1)
         messages = state.messages
         # The LLM decides whether to call a tool or reply to the user
         response = await llm_with_tools.ainvoke(messages)
@@ -51,6 +53,9 @@ def create_graph(tools):
 
     # node 2: analyze fetched email/s
     async def analyze_email(state: AgentState) -> dict:
+        if progress_callback:
+            progress_callback("Analyzing emails with GenAI for job updates...", 1)
+            
         raw_content = state.messages[-1].content
         last_message = str(raw_content)
         
@@ -73,13 +78,13 @@ def create_graph(tools):
     
     # node 3: update the google sheets
     async def update_sheets(state: AgentState) -> dict:
+        if progress_callback:
+            progress_callback("Syncing updates to Google Sheets...", 1)
+            
         updates = state.final_output
         if not updates:
-            print("No updates to push to Google Sheets.")
             return {}
             
-        print(f"Checking {len(updates)} updates against Google Sheets...")
-        
         rows = []
         for model in updates:
             rows.append([
@@ -91,7 +96,7 @@ def create_graph(tools):
                 model.short_summary or ""
             ])
             
-        # Call our new service synchronously in a background thread to not block event loop
+        # Call our service synchronously in a background thread to not block event loop
         await asyncio.to_thread(upsert_to_sheet, rows)
         return {}
 
@@ -115,13 +120,16 @@ def create_graph(tools):
     return workflow.compile()
 
 
-async def run_agent():
+async def run_agent(progress_callback: Callable[[str, int], None] | None = None):
     """Encapsulates the graph building and MCP tool context."""
-    print("Connecting to local MCP server...")
+    if progress_callback:
+        progress_callback("Connecting to Gmail MCP server...", 0)
     
     async with get_google_mcp_tools() as tools:
-        print("Server connected. Building graph...")
-        app = create_graph(tools)
+        if progress_callback:
+            progress_callback("Connected to Gmail MCP server.", 1)
+            
+        app = create_graph(tools, progress_callback=progress_callback)
         
         initial_state = {
             "messages": [
@@ -137,9 +145,7 @@ async def run_agent():
             ]
         }
         
-        print("Running workflow...")
         result = await app.ainvoke(initial_state)
-        
         return result
 
 
