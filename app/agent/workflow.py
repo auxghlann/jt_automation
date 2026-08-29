@@ -18,10 +18,11 @@ ApplicationStatus = Literal["applied", "viewed", "interview", "rejected", "accep
 
 # Sheet model - represents a single row of a sheet
 class SheetModel(BaseModel):
-    company_name: str | None = Field(default=None, description="the name of the company the user applied")
-    job_title: str | None = Field(default=None, description="the job title the user applied")
-    location: str | None =  Field(default=None, description="the location of the job applied")
+    company_name: str | None = Field(default=None, description="the name of the company the user applied to")
+    job_title: str | None = Field(default=None, description="the job title the user applied for")
+    location: str | None = Field(default=None, description="the location of the job applied for")
     status: ApplicationStatus | None = Field(default=None, description="the status of the application")
+    date: str | None = Field(default=None, description="the date of the application or status update in YYYY-MM-DD format")
     short_summary: str | None = Field(default=None, description="short summary of the email")
 
 
@@ -62,6 +63,7 @@ def create_graph(tools):
         prompt = (
             "Analyze these emails and extract ONLY the job updates where the application status "
             "is EXACTLY one of or in the CONTEXT of: 'applied', 'viewed', 'interview', 'rejected', 'accepted'. "
+            "Extract the date of the email/event in 'YYYY-MM-DD' format into the date field. "
             "Completely IGNORE any emails about 'saved' jobs, 'expired' jobs, or any other irrelevant statuses. "
             f"Emails: {last_message}"
         )
@@ -85,6 +87,7 @@ def create_graph(tools):
                 model.job_title or "",
                 model.location or "",
                 model.status or "",
+                model.date or "",
                 model.short_summary or ""
             ])
             
