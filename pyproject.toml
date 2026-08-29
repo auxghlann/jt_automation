@@ -19,4 +19,5 @@ dependencies = [
     "langgraph>=1.2.7",
     "mcp[cli]>=1.28.1",
     "python-dotenv>=1.2.2",
+    "rich>=15.0.0",
 ]
