@@ -85,6 +85,3 @@ The script will:
 4. Parse and extract job updates (Applied, Viewed, Interview, Rejected, Accepted).
 5. Connect to your Google Sheet and perform smart deduplication/updates.
 6. Print a summary to the console!
-
-## Security
-- Your `token.json`, `credentials.json`, `processed_emails.json`, and `.env` are safely ignored by `.gitignore`. They will never be pushed to version control.
