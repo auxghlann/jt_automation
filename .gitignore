@@ -18,6 +18,8 @@ token.json
 
 # data
 processed_emails.json
+logs/
+*.log
 
 # test
 tests/
