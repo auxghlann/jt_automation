@@ -1,8 +1,11 @@
 from langchain_core.messages import (
-    AIMessage, HumanMessage, SystemMessage, AnyMessage
+    HumanMessage, SystemMessage, AnyMessage
 )
 from typing import Literal, Annotated, Callable
 from pydantic import Field, BaseModel
+
+import re
+import asyncio
 
 from app.services.sheets_service import upsert_to_sheet
 from app.agent.model import get_model
@@ -10,8 +13,10 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from app.services.gmail_mcp import get_google_mcp_tools
+from app.services.mcp_server import save_processed_ids
+from app.logger import get_logger
 
-import asyncio
+logger = get_logger("agent.workflow")
 
 # Application Status Accepted Literal
 ApplicationStatus = Literal["applied", "viewed", "interview", "rejected", "accepted"]
@@ -30,9 +35,28 @@ class SheetModel(BaseModel):
 class ExtractedResult(BaseModel):
     updates: list[SheetModel] = Field(description="a list of all job applications updates found in the emails") 
 
+def extract_message_ids(raw_content) -> list[str]:
+    """Safely extracts message IDs from tool output regardless of format or escaping."""
+    text_blocks = []
+    if isinstance(raw_content, list):
+        for item in raw_content:
+            if isinstance(item, dict) and "text" in item:
+                text_blocks.append(str(item["text"]))
+            else:
+                text_blocks.append(str(item))
+    else:
+        text_blocks.append(str(raw_content))
+        
+    combined_text = "\n".join(text_blocks)
+    ids = re.findall(r"message_id['\"\\]*\s*:\s*['\"\\]*([a-zA-Z0-9_\-]+)", combined_text)
+    return list(dict.fromkeys(ids))
+
+
 class AgentState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
     final_output: list[SheetModel] = Field(default_factory=list)
+    fetched_message_ids: list[str] = Field(default_factory=list)
+    sync_report: dict = Field(default_factory=dict)
 
 
 # Graph Factory
@@ -44,6 +68,7 @@ def create_graph(tools, progress_callback: Callable[[str, int], None] | None = N
 
     # nodes 1: fetch email
     async def get_email(state: AgentState) -> dict:
+        logger.info("Executing node 'get_email' - querying LLM to call email tool.")
         if progress_callback:
             progress_callback("Querying recent emails from Gmail inbox...", 1)
         messages = state.messages
@@ -53,14 +78,26 @@ def create_graph(tools, progress_callback: Callable[[str, int], None] | None = N
 
     # node 2: analyze fetched email/s
     async def analyze_email(state: AgentState) -> dict:
+        logger.info("Executing node 'analyze_email' - parsing emails for job updates.")
         if progress_callback:
             progress_callback("Analyzing emails with GenAI for job updates...", 1)
             
         raw_content = state.messages[-1].content
-        last_message = str(raw_content)
+        if isinstance(raw_content, list):
+            texts = [b["text"] if isinstance(b, dict) and "text" in b else str(b) for b in raw_content]
+            last_message = "\n".join(texts)
+        else:
+            last_message = str(raw_content)
         
-        if "No job updates found" in last_message or last_message == "[]":
-                return {"final_output": []}
+        # Extract fetched message IDs safely
+        message_ids = extract_message_ids(raw_content)
+        logger.info("Identified %d fetched email message ID(s) in tool output.", len(message_ids))
+        
+        if "No job updates found" in last_message or last_message.strip() in ("", "[]"):
+            logger.info("No email updates found in tool output.")
+            if message_ids:
+                save_processed_ids(message_ids)
+            return {"final_output": [], "fetched_message_ids": message_ids}
                 
         # Extract the structured data from the raw tool output or LLM summary
         structured_llm = llm_with_tools.with_structured_output(ExtractedResult)
@@ -73,17 +110,24 @@ def create_graph(tools, progress_callback: Callable[[str, int], None] | None = N
             f"Emails: {last_message}"
         )
         response: ExtractedResult = await structured_llm.ainvoke(prompt)
+        logger.info("Structured extraction completed: %d updates found.", len(response.updates))
         
-        return {"final_output": response.updates}
+        if not response.updates and message_ids:
+            # All fetched emails were analyzed and contained no valid job updates; safe to mark processed
+            save_processed_ids(message_ids)
+            
+        return {"final_output": response.updates, "fetched_message_ids": message_ids}
     
     # node 3: update the google sheets
     async def update_sheets(state: AgentState) -> dict:
+        updates = state.final_output
+        logger.info("Executing node 'update_sheets' with %d update(s).", len(updates) if updates else 0)
         if progress_callback:
             progress_callback("Syncing updates to Google Sheets...", 1)
             
-        updates = state.final_output
         if not updates:
-            return {}
+            logger.info("No updates to sync to Google Sheets.")
+            return {"sync_report": {"appended": [], "updated": [], "skipped": []}}
             
         rows = []
         for model in updates:
@@ -97,8 +141,13 @@ def create_graph(tools, progress_callback: Callable[[str, int], None] | None = N
             ])
             
         # Call our service synchronously in a background thread to not block event loop
-        await asyncio.to_thread(upsert_to_sheet, rows)
-        return {}
+        report = await asyncio.to_thread(upsert_to_sheet, rows)
+        logger.info("Google Sheets upsert completed successfully.")
+
+        # Atomic commit: Only mark message IDs as processed once sheet updates succeed!
+        if state.fetched_message_ids:
+            save_processed_ids(state.fetched_message_ids)
+        return {"sync_report": report or {}}
 
     # --- Build the Graph ---
     workflow = StateGraph(AgentState)
@@ -120,12 +169,14 @@ def create_graph(tools, progress_callback: Callable[[str, int], None] | None = N
     return workflow.compile()
 
 
-async def run_agent(progress_callback: Callable[[str, int], None] | None = None):
+async def run_agent(progress_callback: Callable[[str, int], None] | None = None, days_ago: int = 7):
     """Encapsulates the graph building and MCP tool context."""
+    logger.info("Initializing run_agent workflow (days_ago=%d).", days_ago)
     if progress_callback:
         progress_callback("Connecting to Gmail MCP server...", 0)
     
     async with get_google_mcp_tools() as tools:
+        logger.info("Retrieved %d tools from Gmail MCP server.", len(tools))
         if progress_callback:
             progress_callback("Connected to Gmail MCP server.", 1)
             
@@ -140,27 +191,12 @@ async def run_agent(progress_callback: Callable[[str, int], None] | None = None)
                     "If none are found, reply with 'No job updates found'."
                 ),
                 HumanMessage(
-                    "Please check my recent emails for job updates."
+                    f"Please check my recent emails from the last {days_ago} days for job updates."
                 )
             ]
         }
         
+        logger.info("Invoking LangGraph workflow with initial state.")
         result = await app.ainvoke(initial_state)
-        return result
-
-
-# if __name__ == "__main__":
-#     # async def get_graph_image():
-#     #     async with get_google_mcp_tools() as tools:
-#     #         print("Server connected. Building graph...")
-#     #         app = create_graph(tools)
-# 
-#     #     import os
-#     #     from IPython.display import Image, display
-#     #     output_path = os.path.join(os.path.dirname(__file__), "graph.png")
-# 
-#     #     with open(output_path, "wb") as f:
-#     #             # Call the method with () and write the bytes directly to the file
-#     #             f.write(app.get_graph().draw_mermaid_png())
-#     
-#     # asyncio.run(get_graph_image())  
+        logger.info("LangGraph workflow execution finished.")
+        return result

@@ -1,44 +1,52 @@
-import os
 import re
 import json
 import base64
 import email.utils
-from datetime import datetime
+from pathlib import Path
+from datetime import date
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 from googleapiclient.discovery import build
 from .google_auth import get_credentials
+from app.logger import setup_logging, get_logger
+
+setup_logging()
+logger = get_logger("services.mcp_server")
 
 mcp = FastMCP("GmailMCPServer")
 
-PROCESSED_EMAILS_FILE = "processed_emails.json"
+PROCESSED_EMAILS_FILE = Path("processed_emails.json")
 
 def format_email_date(raw_date: str) -> str:
     """Parses RFC 2822 email date header into YYYY-MM-DD format."""
     if not raw_date:
-        return datetime.now().strftime("%Y-%m-%d")
+        return date.today().isoformat()
     try:
-        dt = email.utils.parsedate_to_datetime(raw_date)
-        return dt.strftime("%Y-%m-%d")
+        return email.utils.parsedate_to_datetime(raw_date).date().isoformat()
     except Exception:
-        return datetime.now().strftime("%Y-%m-%d")
+        return date.today().isoformat()
 
 def load_processed_ids() -> set:
-    """Loads processed IDs, automatically creating the file if it doesn't exist."""
-    if not os.path.exists(PROCESSED_EMAILS_FILE):
-        # Auto-create the file on the first run
-        with open(PROCESSED_EMAILS_FILE, "w") as f:
-            json.dump([], f)
+    """Loads processed IDs, returning an empty set if the file doesn't exist."""
+    if not PROCESSED_EMAILS_FILE.exists():
         return set()
-        
-    with open(PROCESSED_EMAILS_FILE, "r") as f:
-        return set(json.load(f))
+    try:
+        return set(json.loads(PROCESSED_EMAILS_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+def save_processed_ids(msg_ids: list[str]):
+    """Persists a collection of processed email IDs to processed_emails.json."""
+    if not msg_ids:
+        return
+    processed = load_processed_ids()
+    processed.update(msg_ids)
+    PROCESSED_EMAILS_FILE.write_text(json.dumps(list(processed)), encoding="utf-8")
+    logger.info("Saved %d message ID(s) to processed cache.", len(msg_ids))
 
 def save_processed_id(msg_id: str):
-    processed = load_processed_ids()
-    processed.add(msg_id)
-    with open(PROCESSED_EMAILS_FILE, "w") as f:
-        json.dump(list(processed), f)
+    """Backwards-compatible helper to save a single processed message ID."""
+    save_processed_ids([msg_id])
 
 def get_email_body(payload):
     """Recursively searches for the HTML body, falling back to plain text."""
@@ -83,29 +91,59 @@ def get_gmail_service():
     return build('gmail', 'v1', credentials=creds)
 
 @mcp.tool()
-def get_recent_emails(days_ago: int = 2, limit: int = 7) -> str:
-    """Fetch emails from the Primary inbox from the last N days."""
+def get_recent_emails(days_ago: int = 7, limit: int = 10) -> str:
+    """Fetch unprocessed emails from the Primary inbox from the last N days, paginating until limit is reached."""
+    # Enforce safe bounds (1-15) to prevent overloading GenAI structured output
+    limit = max(1, min(limit, 15))
+    days_ago = max(1, min(days_ago, 60))
+    logger.info("get_recent_emails tool invoked (days_ago=%d, target_limit=%d).", days_ago, limit)
     service = get_gmail_service()
     
     # Query for primary category and newer than X days
     query = f"category:primary newer_than:{days_ago}d"
-    results = service.users().messages().list(userId='me', q=query, maxResults=limit).execute()
-    messages = results.get('messages', [])
-    
-    if not messages:
-        return "No recent emails found."
-
-    messages.reverse()
-        
-    email_data = []
     processed_ids = load_processed_ids()
     
-    for msg in messages:
-        msg_id = msg['id']
-        
-        if msg_id in processed_ids:
-            continue
+    unprocessed_msg_ids = []
+    page_token = None
+    max_pages = 5  # Scan up to 5 pages (up to 250 stubs) to find new emails
+    
+    for page in range(max_pages):
+        list_kwargs = {"userId": "me", "q": query, "maxResults": 50}
+        if page_token:
+            list_kwargs["pageToken"] = page_token
             
+        results = service.users().messages().list(**list_kwargs).execute()
+        messages = results.get("messages", [])
+        logger.info("Page %d: Gmail list query returned %d message stubs.", page + 1, len(messages))
+        
+        if not messages:
+            break
+            
+        for msg in messages:
+            msg_id = msg["id"]
+            if msg_id not in processed_ids and msg_id not in unprocessed_msg_ids:
+                unprocessed_msg_ids.append(msg_id)
+                if len(unprocessed_msg_ids) >= limit:
+                    break
+                    
+        if len(unprocessed_msg_ids) >= limit:
+            logger.info("Collected target of %d unprocessed email ID(s).", len(unprocessed_msg_ids))
+            break
+            
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            logger.info("No more pages available in Gmail list query.")
+            break
+
+    if not unprocessed_msg_ids:
+        logger.info("No unprocessed emails found in the last %d days.", days_ago)
+        return "No recent emails found."
+
+    unprocessed_msg_ids.reverse()  # Process oldest to newest within the batch
+    email_data = []
+    
+    for msg_id in unprocessed_msg_ids:
+        logger.info("Fetching full details for email ID: %s", msg_id)
         # Request the 'full' format so we get the body payload
         msg_detail = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
         payload = msg_detail.get('payload', {})
@@ -152,57 +190,8 @@ def get_recent_emails(days_ago: int = 2, limit: int = 7) -> str:
             "snippet": snippet
         })
         
-        # Mark as processed so we never read it again!
-        save_processed_id(msg_id)
-        
+    logger.info("Processed and returning %d new email(s).", len(email_data))
     return str(email_data)
 
 if __name__ == "__main__":
     mcp.run()
-    # import sys
-    
-    # # If ran with 'run', start the MCP server as normal
-    # if len(sys.argv) > 1 and sys.argv[1] == "run":
-    #     mcp.run()
-    # else:
-    #     print("=== COMPARING EMAIL FETCHING METHODS ===\n")
-    #     service = get_gmail_service()
-    #     query = "category:primary newer_than:7d"
-        
-    #     # Grab just 1 email for the test
-    #     results = service.users().messages().list(userId='me', q=query, maxResults=1).execute()
-    #     messages = results.get('messages', [])
-        
-    #     if not messages:
-    #         print("No recent emails found.")
-    #     else:
-    #         msg_id = messages[0]['id']
-            
-    #         # --- 1. OLD WAY (Snippet Only) ---
-    #         print("--- 1. OLD WAY (Snippet Only) ---")
-    #         old_detail = service.users().messages().get(userId='me', id=msg_id, format='metadata').execute()
-    #         old_headers = old_detail.get('payload', {}).get('headers', [])
-    #         old_subj = next((h['value'] for h in old_headers if h['name'] == 'Subject'), "No Subject")
-            
-    #         raw_snippet = old_detail.get('snippet', '')
-    #         old_snippet = raw_snippet[:250] + "..." if len(raw_snippet) > 250 else raw_snippet
-            
-    #         print(f"Subject: {old_subj}")
-    #         print(f"Snippet length: {len(old_snippet)}")
-    #         print(f"Content: {old_snippet}\n")
-            
-    #         # --- 2. NEW WAY (Body Extraction) ---
-    #         print("--- 2. NEW WAY (Body Extraction) ---")
-    #         print("Running get_recent_emails()...")
-    #         new_result = get_recent_emails(days_ago=7, limit=1)
-            
-    #         import pprint
-    #         # Safe evaluation just to print it beautifully
-    #         try:
-    #             parsed_result = eval(new_result)
-    #             for email in parsed_result:
-    #                 print(f"Subject: {email['subject']}")
-    #                 print(f"Snippet length: {len(email['snippet'])}")
-    #                 print(f"Content: {email['snippet']}")
-    #         except Exception as e:
-    #             print(new_result)
