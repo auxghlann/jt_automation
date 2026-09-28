@@ -12,7 +12,7 @@ from rich.progress import (
     TaskProgressColumn,
     TimeElapsedColumn
 )
-from app.agent.workflow import run_agent
+from app.services.agent_service import run_agent
 from app.errors.exceptions import AuthRequiredError, find_auth_error, format_exception_details
 from app.logger import get_logger
 
